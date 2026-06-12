@@ -1,9 +1,14 @@
 {
   "name": "trail-fragmentation-research",
   "version": "1.0.0",
-  "description": "Research project on trail-induced fragmentation",
-  "main": "src/javascript/process_tracks.js",
+  "description": "Quantify trail-induced fragmentation using fastgeotoolkit",
+  "main": "src/javascript/process_tracks.mjs",
+  "scripts": {
+    "process": "node src/javascript/process_tracks.mjs"
+  },
   "dependencies": {
-    "fastgeotoolkit": "^1.0.0"
-  }
+    "fastgeotoolkit": "^0.2.3"
+  },
+  "author": "",
+  "license": "MIT"
 }
