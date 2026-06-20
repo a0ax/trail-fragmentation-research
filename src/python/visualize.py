@@ -51,7 +51,7 @@ class TrailVisualizer:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         plt.close()
-        print(f"🗺️ Map saved to {output_path}")
+        print(f"️ Map saved to {output_path}")
     
     # The rest of the functions (dashboard, interactive map) remain the same
     # as in the previous version. They already work with any GeoDataFrame.
@@ -101,7 +101,7 @@ class TrailVisualizer:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         plt.close()
-        print(f"📊 Dashboard saved to {output_path}")
+        print(f" Dashboard saved to {output_path}")
     
     @staticmethod
     def create_interactive_map(protected_area, trails_gdf, 
@@ -127,4 +127,4 @@ class TrailVisualizer:
         folium.LayerControl().add_to(m)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         m.save(output_path)
-        print(f"🌐 Interactive map saved to {output_path}")
+        print(f" Interactive map saved to {output_path}")
