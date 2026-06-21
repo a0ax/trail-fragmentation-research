@@ -43,7 +43,7 @@ class TrailFragmentationAnalyzer:
             self.crs = "EPSG:3857"
         
         self.total_area = self.protected_area.geometry.area.sum()
-        print(f"🌍 Total protected area: {self.total_area / 1e6:.2f} km²")
+        print(f" Total protected area: {self.total_area / 1e6:.2f} km²")
         print(f"   (using {len(self.protected_area)} polygon features)")
     
     def _load_protected_areas(self, input_path):
@@ -55,7 +55,7 @@ class TrailFragmentationAnalyzer:
                 shp_files = glob.glob(os.path.join(input_path, "*.shp"))
                 if not shp_files:
                     raise FileNotFoundError(f"No .shp files found in directory: {input_path}")
-                print(f"📁 Found {len(shp_files)} shapefiles in directory")
+                print(f" Found {len(shp_files)} shapefiles in directory")
                 gdfs = []
                 for shp in shp_files:
                     gdf = gpd.read_file(shp)
@@ -127,7 +127,7 @@ class TrailFragmentationAnalyzer:
     
     def calculate_fragmentation_index(self, trails_gdf):
         """Compute all fragmentation metrics."""
-        print("🔄 Buffering trails...")
+        print(" Buffering trails...")
         buffered = trails_gdf.geometry.buffer(self.buffer_distance)
         affected_geom = unary_union(buffered)
         
@@ -183,7 +183,7 @@ class TrailFragmentationAnalyzer:
     
     def run_full_analysis(self, gpx_files):
         """Orchestrate the entire analysis pipeline."""
-        print("🚀 Starting fragmentation analysis...")
+        print(" Starting fragmentation analysis...")
         trails = self.load_trails(gpx_files)
         frag = self.calculate_fragmentation_index(trails)
         cluster = self.spatial_clustering(trails)
@@ -209,4 +209,4 @@ class TrailFragmentationAnalyzer:
         )
         with open(os.path.join(output_dir, 'analysis_results.json'), 'w') as f:
             json.dump(results, f, indent=2)
-        print(f"✅ Results exported to {output_dir}")
+        print(f" Results exported to {output_dir}")
