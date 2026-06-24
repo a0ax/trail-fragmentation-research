@@ -27,3 +27,4 @@ outputs/
 .vscode/
 .idea/
 *.swp
+data/gpx-tracks-from-hikr.org.csv
