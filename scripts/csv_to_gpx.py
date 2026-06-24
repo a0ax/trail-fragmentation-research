@@ -1,231 +1,232 @@
 #!/usr/bin/env python
 """
-Convert CSV with embedded GPX trackpoints into valid GPX files.
-Handles the specific format from hikr.org exports.
+Extract GPX from CSV with a 'gpx' column.
+Supports large GPX content (increased field size limit).
+Optionally filters by bounding box using the 'bounds' column.
 """
 
 import csv
 import os
 import re
+import sys
+import json
 from pathlib import Path
-from datetime import datetime
-import xml.etree.ElementTree as ET
 
-def extract_gpx_from_cell(cell_content):
-    """
-    Extract GPX trackpoint data from a CSV cell.
-    
-    The data looks like:
-    <trkpt lat="46.387..." lon="9.095...">
-      <ele>2337.1</ele>
-      <time>2013-09-13T12:59:08Z</time>
-    </trkpt>
-    """
-    # The data is often truncated or split. We need to find all complete trkpt elements.
-    # Pattern to match complete trackpoint elements
-    pattern = r'<trkpt\s+lat="([^"]+)"\s+lon="([^"]+)"[^>]*>.*?</trkpt>'
-    matches = re.findall(pattern, cell_content, re.DOTALL)
-    
-    if not matches:
-        # Try alternate pattern if attributes are quoted with double quotes
-        pattern2 = r'<trkpt\s+lat=""([^"]+)""\s+lon=""([^"]+)""[^>]*>.*?</trkpt>'
-        matches = re.findall(pattern2, cell_content, re.DOTALL)
-    
-    return matches
+# Increase CSV field size limit to handle large GPX columns
+csv.field_size_limit(sys.maxsize)
 
-def build_gpx_from_points(points, metadata):
+def sanitize_filename(name):
+    """Remove invalid characters for filenames."""
+    return re.sub(r'[^\w\-_. ]', '_', str(name))
+
+def parse_bounds(bounds_str):
     """
-    Build a valid GPX XML string from extracted points.
+    Parse the 'bounds' column (JSON-like dict) to extract min/max lat/lon.
+    Example:
+    "{'min': {'type': 'Point', 'coordinates': [13.242523, 47.231143]}, 'max': ...}"
+    Returns a dict with 'min_lat', 'max_lat', 'min_lon', 'max_lon' or None if parsing fails.
+    """
+    try:
+        # Replace single quotes with double quotes for valid JSON
+        bounds_str_fixed = bounds_str.replace("'", '"')
+        bounds = json.loads(bounds_str_fixed)
+        min_lon, min_lat = bounds['min']['coordinates']
+        max_lon, max_lat = bounds['max']['coordinates']
+        return {
+            'min_lat': min_lat,
+            'max_lat': max_lat,
+            'min_lon': min_lon,
+            'max_lon': max_lon
+        }
+    except Exception:
+        return None
+
+def track_in_area(bounds_info, area_bounds):
+    """
+    Check if track's bounding box intersects the area bounding box.
+    area_bounds: dict with 'min_lat', 'max_lat', 'min_lon', 'max_lon'
+    """
+    if not bounds_info:
+        return False
+    # Check if the two bounding boxes overlap
+    if bounds_info['max_lat'] < area_bounds['min_lat'] or bounds_info['min_lat'] > area_bounds['max_lat']:
+        return False
+    if bounds_info['max_lon'] < area_bounds['min_lon'] or bounds_info['min_lon'] > area_bounds['max_lon']:
+        return False
+    return True
+
+def extract_gpx_from_csv(csv_path, output_dir='data/raw', max_rows=None, start_row=0,
+                         area_bounds=None, filter_bounds=False):
+    """
+    Extract GPX from 'gpx' column and save as individual files.
     
     Args:
-        points: list of (lat, lon, ele, time) tuples
-        metadata: dict with name, description, etc.
-    """
-    if not points:
-        return None
-    
-    # GPX header
-    gpx = '''<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="csv_to_gpx_converter" xmlns="http://www.topografix.com/GPX/1/1">
-  <metadata>
-    <name>{name}</name>
-    <desc>{desc}</desc>
-    <time>{time}</time>
-  </metadata>
-  <trk>
-    <name>{name}</name>
-    <desc>{desc}</desc>
-    <trkseg>
-'''.format(
-    name=metadata.get('name', 'Converted Track'),
-    desc=metadata.get('desc', ''),
-    time=datetime.utcnow().isoformat() + 'Z'
-)
-    
-    # Add trackpoints
-    for lat, lon, ele, time in points:
-        ele_str = f'<ele>{ele}</ele>' if ele else ''
-        time_str = f'<time>{time}</time>' if time else ''
-        gpx += f'      <trkpt lat="{lat}" lon="{lon}">\n'
-        if ele_str:
-            gpx += f'        {ele_str}\n'
-        if time_str:
-            gpx += f'        {time_str}\n'
-        gpx += '      </trkpt>\n'
-    
-    # GPX footer
-    gpx += '''    </trkseg>
-  </trk>
-</gpx>'''
-    
-    return gpx
-
-def process_csv_to_gpx(csv_path, output_dir='data/raw'):
-    """
-    Main function: read CSV and convert each row to a GPX file.
+        csv_path: Path to CSV file
+        output_dir: Where to save GPX files
+        max_rows: Maximum number of rows to process (None = all)
+        start_row: Row to start from (for resuming)
+        area_bounds: dict with min_lat, max_lat, min_lon, max_lon for filtering
+        filter_bounds: if True, use area_bounds to filter tracks
     """
     os.makedirs(output_dir, exist_ok=True)
     
-    # Read CSV
+    # First, detect delimiter
     with open(csv_path, 'r', encoding='utf-8') as f:
-        # Try to detect delimiter
         sample = f.read(1024)
         f.seek(0)
         sniffer = csv.Sniffer()
         delimiter = sniffer.sniff(sample).delimiter
+        print(f"🔍 Detected delimiter: '{delimiter}'")
+    
+    # Count total rows quickly (with large field size)
+    print("📊 Counting rows... (this may take a moment)")
+    total_rows = 0
+    with open(csv_path, 'r', encoding='utf-8') as f:
+        # Use quoting=csv.QUOTE_MINIMAL to handle quoted fields with newlines
+        reader = csv.reader(f, delimiter=delimiter, quoting=csv.QUOTE_MINIMAL)
+        try:
+            header = next(reader)  # skip header
+        except StopIteration:
+            print("CSV is empty")
+            return
+        for _ in reader:
+            total_rows += 1
+            if total_rows % 100000 == 0:
+                print(f"   Counted {total_rows:,} rows...")
+    print(f"📊 Total rows: {total_rows:,}")
+    
+    if max_rows:
+        total_rows = min(total_rows, max_rows)
+        print(f"📊 Processing only first {total_rows:,} rows")
+    
+    # Re-open for processing
+    processed = 0
+    skipped = 0
+    errors = 0
+    
+    with open(csv_path, 'r', encoding='utf-8') as f:
+        reader = csv.reader(f, delimiter=delimiter, quoting=csv.QUOTE_MINIMAL)
+        header = next(reader)
         
-        reader = csv.reader(f, delimiter=delimiter)
-        header = next(reader)  # Skip header row
+        # Find column indices
+        try:
+            gpx_idx = header.index('gpx')
+        except ValueError:
+            print("❌ 'gpx' column not found")
+            return
         
-        print(f"CSV Header: {header}")
-        print(f"Detected delimiter: '{delimiter}'")
+        # Find bounds column if filtering
+        bounds_idx = None
+        if filter_bounds:
+            try:
+                bounds_idx = header.index('bounds')
+                print(f"✅ Found 'bounds' column for filtering")
+            except ValueError:
+                print("⚠️ 'bounds' column not found, cannot filter")
+                filter_bounds = False
         
-        track_count = 0
-        total_points = 0
+        # Find name column
+        name_idx = None
+        for col in ['_id', 'name', 'url']:
+            if col in header:
+                name_idx = header.index(col)
+                break
+        if name_idx is not None:
+            print(f"✅ Using column '{header[name_idx]}' for filename")
         
-        for row_idx, row in enumerate(reader):
-            # Look for the column that contains GPX data
-            # Usually it's the first column, but could be others
-            gpx_content = None
-            for col in row:
-                if '<trkpt' in col:
-                    gpx_content = col
-                    break
+        row_num = 0
+        for row in reader:
+            row_num += 1
             
-            if not gpx_content:
-                print(f"️  Row {row_idx}: No GPX data found, skipping")
+            if row_num <= start_row:
                 continue
+            if max_rows and row_num > max_rows + start_row:
+                break
             
-            # Extract points
-            points = extract_gpx_from_cell(gpx_content)
+            # Filter by bounds if enabled
+            if filter_bounds and bounds_idx is not None:
+                bounds_str = row[bounds_idx].strip()
+                bounds_info = parse_bounds(bounds_str)
+                if not track_in_area(bounds_info, area_bounds):
+                    skipped += 1
+                    continue
             
-            if not points:
-                print(f"️  Row {row_idx}: No valid trackpoints found")
+            try:
+                gpx_content = row[gpx_idx].strip()
+                if not gpx_content:
+                    skipped += 1
+                    continue
+                
+                # Validate that it looks like GPX XML
+                if not (gpx_content.startswith('<?xml') or gpx_content.startswith('<gpx')):
+                    skipped += 1
+                    continue
+                
+                # Generate filename
+                if name_idx is not None and len(row) > name_idx:
+                    base_name = row[name_idx].strip()
+                    base_name = sanitize_filename(base_name)
+                else:
+                    base_name = f"track_{row_num:06d}"
+                
+                # Ensure unique filename
+                filename = f"{base_name}.gpx"
+                filepath = os.path.join(output_dir, filename)
+                counter = 1
+                while os.path.exists(filepath):
+                    filename = f"{base_name}_{counter:03d}.gpx"
+                    filepath = os.path.join(output_dir, filename)
+                    counter += 1
+                
+                with open(filepath, 'w', encoding='utf-8') as out:
+                    out.write(gpx_content)
+                
+                processed += 1
+                if processed % 100 == 0:
+                    print(f"   Processed {processed:,} GPX files...")
+                
+            except Exception as e:
+                errors += 1
+                if errors <= 10:
+                    print(f"⚠️ Error on row {row_num}: {e}")
                 continue
-            
-            # Parse points with elevation and time if available
-            parsed_points = []
-            for lat, lon in points:
-                # Extract elevation and time from the XML
-                # Using regex to find ele and time within the trkpt
-                ele_match = re.search(r'<ele>([^<]+)</ele>', gpx_content)
-                time_match = re.search(r'<time>([^<]+)</time>', gpx_content)
-                ele = ele_match.group(1) if ele_match else None
-                time = time_match.group(1) if time_match else None
-                parsed_points.append((lat, lon, ele, time))
-            
-            # Build metadata from other columns
-            metadata = {
-                'name': f'Track_{row_idx:04d}',
-                'desc': 'Converted from CSV'
-            }
-            
-            # Try to get a better name from other columns
-            for col in row:
-                if col and col not in gpx_content and len(col) < 100:
-                    metadata['name'] = col[:50].strip()
-                    break
-            
-            # Build and save GPX
-            gpx_content = build_gpx_from_points(parsed_points, metadata)
-            
-            if gpx_content:
-                # Clean filename
-                safe_name = re.sub(r'[^\w\-_]', '_', metadata['name'])
-                filename = f"{safe_name}_{row_idx:04d}.gpx"
-                output_path = os.path.join(output_dir, filename)
-                
-                with open(output_path, 'w', encoding='utf-8') as f:
-                    f.write(gpx_content)
-                
-                track_count += 1
-                total_points += len(parsed_points)
-                print(f"Saved: {filename} ({len(parsed_points)} points)")
     
-    print(f"\n Conversion complete!")
-    print(f"Tracks processed: {track_count}")
-    print(f"Total points: {total_points}")
-    print(f"Output directory: {output_dir}")
-
-def combine_gpx_files(input_dir='data/raw', output_file='data/raw/combined.gpx'):
-    """
-    Optional: Combine all GPX files into a single GPX file.
-    """
-    import glob
-    
-    gpx_files = glob.glob(f"{input_dir}/*.gpx")
-    if not gpx_files:
-        print("No GPX files found to combine")
-        return
-    
-    # Parse all files and combine
-    combined = '''<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="csv_to_gpx_converter" xmlns="http://www.topografix.com/GPX/1/1">
-  <metadata>
-    <name>Combined Tracks</name>
-    <desc>All tracks combined for analysis</desc>
-  </metadata>
-'''
-    
-    for file_path in gpx_files:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-            # Extract track segments
-            seg_match = re.search(r'<trkseg>(.*?)</trkseg>', content, re.DOTALL)
-            if seg_match:
-                # Wrap each track in its own trk element
-                combined += f'''  <trk>
-    <name>{os.path.basename(file_path)}</name>
-    <trkseg>
-{seg_match.group(1)}
-    </trkseg>
-  </trk>
-'''
-    
-    combined += '</gpx>'
-    
-    with open(output_file, 'w', encoding='utf-8') as f:
-        f.write(combined)
-    
-    print(f"Combined GPX saved to: {output_file}")
+    print(f"\n📊 Summary:")
+    print(f"   ✅ GPX files created: {processed:,}")
+    print(f"   ⚠️ Skipped (filtered/empty/invalid): {skipped:,}")
+    print(f"   ❌ Errors: {errors:,}")
+    print(f"   📁 Output directory: {output_dir}")
 
 if __name__ == "__main__":
-    import sys
+    import argparse
     
-    if len(sys.argv) < 2:
-        print("Usage: python csv_to_gpx.py <path_to_csv_file>")
-        print("Example: python csv_to_gpx.py data/raw/gpx-tracks-from-hikr.org.csv")
+    parser = argparse.ArgumentParser(description='Extract GPX from CSV')
+    parser.add_argument('csv_file', help='Path to CSV file')
+    parser.add_argument('--output', '-o', default='data/raw', help='Output directory')
+    parser.add_argument('--max-rows', '-n', type=int, default=None, help='Max rows to process')
+    parser.add_argument('--start-row', '-s', type=int, default=0, help='Start row (for resuming)')
+    parser.add_argument('--filter-switzerland', action='store_true',
+                        help='Filter tracks to only those intersecting Switzerland (approx bounds)')
+    
+    args = parser.parse_args()
+    
+    if not os.path.exists(args.csv_file):
+        print(f"❌ CSV file not found: {args.csv_file}")
         sys.exit(1)
     
-    csv_path = sys.argv[1]
-    if not os.path.exists(csv_path):
-        print(f"File not found: {csv_path}")
-        sys.exit(1)
+    # Define Switzerland bounding box (approximate)
+    swiss_bounds = {
+        'min_lat': 45.8,
+        'max_lat': 47.8,
+        'min_lon': 5.9,
+        'max_lon': 10.5
+    }
     
-    # Convert
-    process_csv_to_gpx(csv_path, output_dir='data/raw')
-    
-    # Optionally combine all GPX files
-    combine = input("Combine all GPX files into one? (y/n): ").lower() == 'y'
-    if combine:
-        combine_gpx_files()
+    extract_gpx_from_csv(
+        args.csv_file,
+        args.output,
+        args.max_rows,
+        args.start_row,
+        area_bounds=swiss_bounds if args.filter_switzerland else None,
+        filter_bounds=args.filter_switzerland
+    )
