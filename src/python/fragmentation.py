@@ -127,31 +127,33 @@ class TrailFragmentationAnalyzer:
             pass
     
     def calculate_fragmentation_index(self, trails_gdf):
-        """Compute all fragmentation metrics."""
-        print(" Buffering trails...")
+        print("🔄 Buffering trails...")
         buffered = trails_gdf.geometry.buffer(self.buffer_distance)
         affected_geom = unary_union(buffered)
-        
+
         if affected_geom.geom_type == 'MultiPolygon':
             affected_area = sum(p.area for p in affected_geom.geoms)
         else:
             affected_area = affected_geom.area
-        
+
         frag_index = affected_area / self.total_area
         total_length = trails_gdf.geometry.length.sum()
         trail_density = total_length / (self.total_area / 1e6)
-        
+
         if affected_geom.geom_type == 'MultiPolygon':
             perimeter = sum(p.length for p in affected_geom.geoms)
         else:
             perimeter = affected_geom.length
         edge_to_area = perimeter / affected_area if affected_area > 0 else 0
-        
+
+        # --- Core habitat (area > 100m from any trail) ---
         core_buffer = self.buffer_distance * 10
-        core_geom = self.protected_area.geometry.buffer(-core_buffer).buffer(0)
-        core_area = core_geom.area.sum() if not core_geom.is_empty else 0
-        core_area = max(0, core_area)
-        
+        # Buffer the protected area geometries negatively
+        buffered_core = self.protected_area.geometry.buffer(-core_buffer)
+        # Sum the areas – empty geometries have area 0
+        core_area = buffered_core.area.sum()
+        core_area = max(0, core_area)  # ensure non-negative
+
         return {
             'fragmentation_index': frag_index,
             'fragmentation_percent': frag_index * 100,
