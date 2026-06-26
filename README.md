@@ -1,7 +1,7 @@
-# Trail Fragmentation in Protected Natural Areas [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20869714.svg)](https://doi.org/10.5281/zenodo.20869713)  
-[![EarthArXiv](https://img.shields.io/badge/EarthArXiv-preprint-blue)](https://eartharxiv.org/...)  
+# Trail Fragmentation in Protected Natural Areas 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20869714.svg)](https://doi.org/10.5281/zenodo.20869713) [![EarthArXiv](https://img.shields.io/badge/EarthArXiv-preprint-blue)](https://eartharxiv.org/...)  
 
-![outputs/by_type/fragmentation_map_static.png](outputs/by_type/fragmentation_map_static.png)
+![fragmentation_map_static.png](fragmentation_map_static.png)
 
 The repository uses a high‑performance computational pipeline based on [`fastgeotoolkit`](https://github.com/a0ax/fastgeotoolkit) to process thousands of GPS hiking tracks and all Swiss protected area polygons, producing fragmentation indices, trail densities, and core habitat estimates. The analysis includes buffer sensitivity tests (5–50 m) and validation against the official Swiss trail network.
 
