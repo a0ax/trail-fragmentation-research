@@ -1,29 +1,17 @@
-# Trail Fragmentation in Swiss Protected Areas
-
-[![DOI](https://zenodo.org/badge/1280525611.svg)](https://doi.org/10.5281/zenodo.20869713)  
+# Trail Fragmentation in Protected Natural Areas [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20869714.svg)](https://doi.org/10.5281/zenodo.20869713)  
 [![EarthArXiv](https://img.shields.io/badge/EarthArXiv-preprint-blue)](https://eartharxiv.org/...)  
 
-This repository provides the complete code, data processing pipelines, and supplementary materials for the manuscript:
+![outputs/by_type/fragmentation_map_static.png](outputs/by_type/fragmentation_map_static.png)
 
-**Weimer, A. (2026).** *Quantifying Trail‑Induced Fragmentation in Swiss Protected Areas Using Large‑Scale GPS Trajectory Analysis.*  
-EarthArXiv preprint. DOI: [10.31223/...] (replace with actual DOI)
+The repository uses a high‑performance computational pipeline based on [`fastgeotoolkit`](https://github.com/a0ax/fastgeotoolkit) to process thousands of GPS hiking tracks and all Swiss protected area polygons, producing fragmentation indices, trail densities, and core habitat estimates. The analysis includes buffer sensitivity tests (5–50 m) and validation against the official Swiss trail network.
 
-The study uses a high‑performance computational pipeline based on [`fastgeotoolkit`](https://github.com/a0ax/fastgeotoolkit) to process thousands of GPS hiking tracks and all Swiss protected area polygons, producing fragmentation indices, trail densities, and core habitat estimates. The analysis includes buffer sensitivity tests (5–50 m) and validation against the official Swiss trail network.
 
-## Repository Contents
-
-- `src/` – Python scripts for preprocessing, fragmentation calculations, sensitivity analysis, validation, and mapping.
-- `outputs/` – Generated figures, tables, and summary statistics (CSV).
-- `requirements.txt` – Python dependencies.
-- `LICENSE` – MIT License.
-
-## Getting Started
 
 ### Prerequisites
 
 - Python 3.13 or higher
-- Node.js 22 or higher (for the `fastgeotoolkit` WebAssembly server)
-- npm (to install the `fastgeotoolkit` package)
+- Node.js 22 or higher 
+- npm 
 
 ### Installation
 
@@ -44,7 +32,7 @@ The analysis requires three datasets:
 
 2. **GPS hiking tracks** – from the hikr.org community (Kaggle dataset: *gpx‑tracks‑from‑hikr.org*). Place the CSV file in `data/gpx/`.
 
-3. **Official Swiss trail network** (optional, for validation) – available from [SwissMobility](https://schweizmobil.ch). Place the GeoPackage in `data/official_trails/`.
+3. **Official Swiss trail network** – available from [SwissMobility](https://schweizmobil.ch). Place the GeoPackage in `data/official_trails/`.
 
 > The raw GPS data are not redistributed in this repository due to licensing restrictions.
 
